@@ -1,0 +1,16 @@
+{
+  "name": "customizable-powerline-for-pi",
+  "version": "0.1.0",
+  "description": "A configurable powerline status bar extension for Pi.",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "src/*.ts",
+    "README.md",
+    "TESTING.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
