@@ -12,7 +12,7 @@ A tiny, themeable, Agnoster-ish powerline for [Pi](https://github.com/earendil-w
 Install it with Pi's package manager:
 
 ```bash
-pi add github:fabiangigler/customizable-powerline-for-pi
+pi install git:github.com/fabiangigler/customizable-powerline-for-pi
 ```
 
 Then reload Pi:

@@ -80,7 +80,7 @@ const getGitPowerlineStatus = (runtime) =>
 
 export default {
   fg: "#ffffff",
-  bg: "#1a1a1a",
+  bg: "",
   separator: "",
   rightSeparator: "",
   hideFooter: true,
@@ -91,8 +91,7 @@ export default {
       id: "pi",
       color: "",
       separatorAfter: "",
-      separatorAfterFg: ({ config }) =>
-        typeof config.bg === "string" ? config.bg : "#1a1a1a",
+      separatorAfterFg: "#1a1a1a",
       value: ({ ctx, data }) => getPiIndicator(ctx, data),
     },
     {
