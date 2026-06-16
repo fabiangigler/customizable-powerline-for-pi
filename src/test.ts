@@ -30,7 +30,7 @@ for (const file of [
 ]) {
   check(join(extensionDir, file));
 }
-check(join(repo, ".pi/extensions/fast-mode.ts"));
+check(join(repo, ".pi/extensions/fast-mode-for-pi/index.ts"));
 
 const normalized = normalizeConfig({
   left: [{ id: "plain", value: () => "ok" }],

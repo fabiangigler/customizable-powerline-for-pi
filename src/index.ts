@@ -91,7 +91,7 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
         const unsubscribe = footerData.onBranchChange(() =>
           tui.requestRender(),
         );
-        const interval = setInterval(() => tui.requestRender(), 120);
+        const interval = setInterval(() => tui.requestRender(), 250);
 
         return {
           dispose: () => {
@@ -116,7 +116,7 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
       ctx.ui.setWidget(
         WIDGET_KEY,
         (tui, theme) => {
-          const interval = setInterval(() => tui.requestRender(), 120);
+          const interval = setInterval(() => tui.requestRender(), 250);
 
           return {
             dispose: () => clearInterval(interval),

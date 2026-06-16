@@ -17,12 +17,12 @@ const getContextPercentage = (runtime) =>
 const getPiIndicator = (ctx, data) => {
   const text = ctx.isIdle()
     ? "π"
-    : ["⠇", "⠋", "⠙", "⠸", "⠴", "⠦"][Math.floor(Date.now() / 120) % 6];
+    : ["⠇", "⠋", "⠙", "⠸", "⠴", "⠦"][Math.floor(Date.now() / 250) % 6];
   return data.fg?.("thinkingText", text) ?? text;
 };
 
 const gitStatusCache = new Map();
-const gitStatusTtlMs = 250;
+const gitStatusTtlMs = 1000;
 
 const readGitPowerlineStatus = (ctx) => {
   const cached = gitStatusCache.get(ctx.cwd);

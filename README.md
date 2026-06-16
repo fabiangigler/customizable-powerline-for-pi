@@ -100,7 +100,7 @@ node .pi/extensions/customizable-powerline-for-pi/src/test.ts
 Validate syntax only:
 
 ```bash
-for f in .pi/extensions/customizable-powerline-for-pi/src/*.ts .pi/extensions/fast-mode.ts; do
+for f in .pi/extensions/customizable-powerline-for-pi/src/*.ts .pi/extensions/fast-mode-for-pi/index.ts; do
   node --check "$f" || exit 1
 done
 ```
