@@ -10,6 +10,7 @@ export type Placement = "footer" | "aboveEditor" | "belowEditor";
 export type PowerlineData = {
   getExtensionStatuses(): ReadonlyMap<string, string>;
   fg?(key: string, text: string): string;
+  requestRender?(): void;
 };
 
 export type PowerlineRenderer = {

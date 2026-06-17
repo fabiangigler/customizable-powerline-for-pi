@@ -91,7 +91,9 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
         const unsubscribe = footerData.onBranchChange(() =>
           tui.requestRender(),
         );
-        const interval = setInterval(() => tui.requestRender(), 250);
+        const interval = setInterval(() => {
+          if (!ctx.isIdle()) tui.requestRender();
+        }, 250);
 
         return {
           dispose: () => {
@@ -104,6 +106,7 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
               ? renderPowerline(width, ctx, config, {
                   ...footerData,
                   fg: theme?.fg ? (key, text) => theme.fg?.(key, text) ?? text : undefined,
+                  requestRender: () => tui.requestRender(),
                 })
               : [];
           },
@@ -116,13 +119,17 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
       ctx.ui.setWidget(
         WIDGET_KEY,
         (tui, theme) => {
-          const interval = setInterval(() => tui.requestRender(), 250);
+          const interval = setInterval(() => {
+            if (!ctx.isIdle()) tui.requestRender();
+          }, 250);
 
           return {
             dispose: () => clearInterval(interval),
             invalidate() {},
             render(width: number): string[] {
-              return config ? renderPowerline(width, ctx, config, getWidgetData(theme)) : [];
+              return config
+                ? renderPowerline(width, ctx, config, getWidgetData(theme, () => tui.requestRender()))
+                : [];
             },
           };
         },

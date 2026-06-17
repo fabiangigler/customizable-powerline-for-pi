@@ -1,6 +1,6 @@
 // Customizable Powerline for Pi theme/config.
 // Edit the published copy, then run /powerline:theme default or /reload.
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 const memo = (runtime, key, create) => {
   if (!runtime.memo.has(key)) runtime.memo.set(key, create());
@@ -24,59 +24,79 @@ const getPiIndicator = (ctx, data) => {
 const gitStatusCache = new Map();
 const gitStatusTtlMs = 1000;
 
-const readGitPowerlineStatus = (ctx) => {
-  const cached = gitStatusCache.get(ctx.cwd);
-  if (cached && Date.now() - cached.at < gitStatusTtlMs) return cached.value;
+const parseGitStatus = (stdout) => {
+  const status = stdout.trimEnd().split("\n");
+  const header = status[0] ?? "";
+  const branch = header.startsWith("## No commits yet on ")
+    ? header.slice("## No commits yet on ".length)
+    : header.startsWith("## ")
+      ? header.slice(3).split("...")[0].split(" ")[0]
+      : "";
+  if (!branch || branch === "HEAD") return null;
 
-  let value = null;
-  try {
-    const status = execSync("git status --porcelain=v1 --branch", {
+  const hasUncommittedChanges = status.slice(1).some(Boolean);
+  const hasUnpulledChanges = /(?:^|[, ])behind \d+/.test(header);
+  const hasUnpushedChanges = /(?:^|[, ])ahead \d+/.test(header);
+  const suffix = [
+    hasUncommittedChanges ? "±" : "",
+    hasUnpulledChanges ? "⇣" : "",
+    hasUnpushedChanges ? "⇡" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    label: " " + branch + (suffix ? " " + suffix : ""),
+    hasUncommittedChanges,
+    hasRemoteChanges: hasUnpulledChanges || hasUnpushedChanges,
+  };
+};
+
+const refreshGitPowerlineStatus = (ctx, data) => {
+  const cached = gitStatusCache.get(ctx.cwd);
+  if (cached?.refreshing) return;
+
+  gitStatusCache.set(ctx.cwd, {
+    at: cached?.at ?? 0,
+    value: cached?.value ?? null,
+    refreshing: true,
+  });
+
+  execFile(
+    "git",
+    ["--no-optional-locks", "status", "--porcelain=v1", "--branch"],
+    {
       cwd: ctx.cwd,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
       timeout: 250,
-    })
-      .trimEnd()
-      .split("\n");
-    const header = status[0] ?? "";
-    const branch = execSync(
-      "git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null",
-      {
-        cwd: ctx.cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 250,
-      },
-    ).trim();
-    if (branch) {
-      const hasUncommittedChanges = status.slice(1).some(Boolean);
-      const hasUnpulledChanges = /(?:^|[, ])behind \d+/.test(header);
-      const hasUnpushedChanges = /(?:^|[, ])ahead \d+/.test(header);
-      const suffix = [
-        hasUncommittedChanges ? "±" : "",
-        hasUnpulledChanges ? "⇣" : "",
-        hasUnpushedChanges ? "⇡" : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      value = {
-        label: " " + branch + (suffix ? " " + suffix : ""),
-        hasUncommittedChanges,
-        hasRemoteChanges: hasUnpulledChanges || hasUnpushedChanges,
-      };
-    }
-  } catch {
-    value = null;
-  }
+    },
+    (error, stdout) => {
+      const value = error ? (cached?.value ?? null) : parseGitStatus(stdout);
+      gitStatusCache.set(ctx.cwd, {
+        at: Date.now(),
+        value,
+        refreshing: false,
+      });
+      data.requestRender?.();
+    },
+  );
+};
 
-  gitStatusCache.set(ctx.cwd, { at: Date.now(), value });
-  return value;
+const readGitPowerlineStatus = (runtime) => {
+  const cached = gitStatusCache.get(runtime.ctx.cwd);
+  if (!cached) {
+    refreshGitPowerlineStatus(runtime.ctx, runtime.data);
+    return null;
+  }
+  if (Date.now() - cached.at >= gitStatusTtlMs) {
+    refreshGitPowerlineStatus(runtime.ctx, runtime.data);
+  }
+  return cached.value;
 };
 
 const getGitPowerlineStatus = (runtime) =>
-  memo(runtime, "gitPowerlineStatus", () =>
-    readGitPowerlineStatus(runtime.ctx),
-  );
+  memo(runtime, "gitPowerlineStatus", () => readGitPowerlineStatus(runtime));
 
 export default {
   fg: "#ffffff",

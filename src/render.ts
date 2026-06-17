@@ -28,8 +28,12 @@ const warnSegmentError = (segmentId: string, phase: string, error: unknown) => {
   );
 };
 
-export const getWidgetData = (theme?: { fg?(key: string, text: string): string }): PowerlineData => ({
+export const getWidgetData = (
+  theme?: { fg?(key: string, text: string): string },
+  requestRender?: () => void,
+): PowerlineData => ({
   fg: theme?.fg ? (key, text) => theme.fg?.(key, text) ?? text : undefined,
+  requestRender,
   getExtensionStatuses: () => {
     const statuses = new Map<string, string>();
     const fastModeStatus = (
