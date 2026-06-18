@@ -2,6 +2,8 @@
 import { existsSync, readdirSync } from "node:fs";
 // @ts-ignore: Pi provides Node built-ins at runtime; this project has no local @types/node.
 import { dirname, join, resolve } from "node:path";
+// @ts-ignore: Pi provides Node built-ins at runtime; this project has no local @types/node.
+import { fileURLToPath } from "node:url";
 import {
   CONFIG_DIR,
   DEFAULT_CONFIG_FILE,
@@ -173,6 +175,16 @@ export const getGlobalConfigPath = (theme?: string): string =>
     ? join(getPiHome(), CONFIG_DIR, THEMES_DIR, `${sanitizeThemeName(theme)}.ts`)
     : join(getPiHome(), CONFIG_DIR, DEFAULT_CONFIG_FILE);
 
+const sourceDir = (): string => dirname(fileURLToPath(import.meta.url));
+
+export const getCoreThemeNames = (): string[] => ["default", "agnoster-tokens"];
+
+export const getCoreConfigPath = (theme?: string): string | undefined => {
+  const themeName = theme ? sanitizeThemeName(theme) : "default";
+  if (!getCoreThemeNames().includes(themeName)) return undefined;
+  return join(sourceDir(), "core-themes", `${themeName}.ts`);
+};
+
 export const getConfigPath = (cwd: string, theme?: string): string =>
   getGlobalConfigPath(theme);
 
@@ -194,12 +206,14 @@ export const getThemeNames = (cwd: string): string[] =>
         getThemeNamesFromDir(join(dir, ".pi", CONFIG_DIR, THEMES_DIR)),
       ),
       ...getThemeNamesFromDir(join(getPiHome(), CONFIG_DIR, THEMES_DIR)),
+      ...getCoreThemeNames(),
     ]),
   ).sort();
 
 export const getThemePaths = (cwd: string, theme?: string): string[] => [
   ...getLocalConfigPaths(cwd, theme),
   getGlobalConfigPath(theme),
+  ...(getCoreConfigPath(theme) ? [getCoreConfigPath(theme)] : []),
 ];
 
 export const isPlacement = (value: unknown): value is Placement =>

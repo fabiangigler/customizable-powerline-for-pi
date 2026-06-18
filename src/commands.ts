@@ -18,10 +18,8 @@ export type PowerlineRuntimeControls = {
   getCurrentContext(): ExtensionContext | undefined;
 };
 
-const getAvailableThemes = (ctx?: ExtensionContext): string[] => [
-  "default",
-  ...getThemeNames(ctx?.cwd ?? process.env.PWD ?? ""),
-];
+const getAvailableThemes = (ctx?: ExtensionContext): string[] =>
+  Array.from(new Set(["default", ...getThemeNames(ctx?.cwd ?? process.env.PWD ?? "")]));
 
 const getThemeCompletions = (
   prefix: string,

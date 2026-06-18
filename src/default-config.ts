@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import defaultTheme from "./default-theme.ts";
 import type { PowerlineConfigInput } from "./types.ts";
-import { getConfigPath } from "./utils.ts";
+import { getConfigPath, getCoreConfigPath } from "./utils.ts";
 
 export const defaultConfigInput = (): PowerlineConfigInput =>
   defaultTheme as PowerlineConfigInput;
@@ -14,11 +14,13 @@ export const defaultConfigInput = (): PowerlineConfigInput =>
 const defaultThemeSourcePath = (): string =>
   join(dirname(fileURLToPath(import.meta.url)), "default-theme.ts");
 
-const publishedConfigSource = (): string =>
-  readFileSync(defaultThemeSourcePath(), "utf8").replace(
+const publishedConfigSource = (theme?: string): string => {
+  const sourcePath = getCoreConfigPath(theme) ?? defaultThemeSourcePath();
+  return readFileSync(sourcePath, "utf8").replace(
     "// Customizable Powerline for Pi default theme/config.\n// This file is both the built-in default and the source copied by /powerline:publish.\n",
     "// Customizable Powerline for Pi theme/config.\n",
   );
+};
 
 export const publishDefaultConfig = (
   cwd: string,
@@ -30,6 +32,6 @@ export const publishDefaultConfig = (
     throw new Error(`Powerline config already exists: ${filePath}`);
   }
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, publishedConfigSource());
+  writeFileSync(filePath, publishedConfigSource(theme));
   return filePath;
 };

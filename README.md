@@ -59,15 +59,17 @@ Switches to a named theme.
 
 ## How themes work
 
-`/powerline:publish <name>` writes a complete editable global theme file. Start there and change the segments you care about.
+`default` is the built-in Agnoster-style theme. The extension also ships `agnoster-tokens`, which adds a token-cost bar on the right.
 
-Local project themes can override global themes by using the same name under any `.pi` folder from the current directory upward:
+`/powerline:publish <name>` writes a complete editable global theme file. For bundled themes such as `agnoster-tokens`, it publishes that bundled source; otherwise it starts from `default`.
+
+Local project themes can override bundled and global themes by using the same name under any `.pi` folder from the current directory upward:
 
 ```text
 .pi/customizable-powerline-for-pi/themes/<name>.ts
 ```
 
-Nearest local themes win over parent-directory themes, and local themes win over global themes.
+Nearest local themes win over parent-directory themes, local themes win over global themes, and global themes win over bundled themes.
 
 A few useful notes:
 
@@ -102,9 +104,8 @@ node .pi/extensions/customizable-powerline-for-pi/src/test.ts
 Validate syntax only:
 
 ```bash
-for f in .pi/extensions/customizable-powerline-for-pi/src/*.ts .pi/extensions/fast-mode-for-pi/index.ts; do
-  node --check "$f" || exit 1
-done
+find .pi/extensions/customizable-powerline-for-pi/src -name '*.ts' -print0 | xargs -0 -n1 node --check
+node --check .pi/extensions/fast-mode-for-pi/index.ts
 ```
 
 See `TESTING.md` for the lightweight test plan.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -22,11 +22,13 @@ for (const file of [
   "constants.ts",
   "default-config.ts",
   "default-theme.ts",
+  "core-themes/default.ts",
   "index.ts",
   "render.ts",
   "theme-types.ts",
   "types.ts",
   "utils.ts",
+  "core-themes/agnoster-tokens.ts",
 ]) {
   check(join(extensionDir, file));
 }
@@ -62,6 +64,17 @@ try {
   assert.equal(named, getConfigPath(tmp, "dark"));
   assert.ok(named.startsWith(process.env.PI_HOME), "named themes publish globally");
   check(named);
+
+  const coreNamed = publishDefaultConfig(tmp, "agnoster-tokens");
+  assert.equal(coreNamed, getConfigPath(tmp, "agnoster-tokens"));
+  assert.match(readFileSync(coreNamed, "utf8"), /id: "tokens"/, "core theme source is published by name");
+  check(coreNamed);
+  const coreConfig = await loadPowerlineConfig(tmp, "agnoster-tokens");
+  assert.equal(coreConfig.right.at(-1)?.id, "tokens", "core theme loads by name");
+  assert.ok(getThemeNames(tmp).includes("default"), "default core theme is discoverable");
+  assert.ok(getThemeNames(tmp).includes("agnoster-tokens"), "core themes are discoverable");
+  const defaultConfig = await loadPowerlineConfig(tmp);
+  assert.equal(defaultConfig.right.at(-1)?.id, "cost", "default core theme loads without a selected theme");
 
   const ancestorRoot = join(tmp, "ancestor-root");
   const nestedCwd = join(ancestorRoot, "packages", "app");
