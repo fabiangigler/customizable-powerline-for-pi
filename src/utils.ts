@@ -1,7 +1,7 @@
 // @ts-ignore: Pi provides Node built-ins at runtime; this project has no local @types/node.
 import { existsSync, readdirSync } from "node:fs";
 // @ts-ignore: Pi provides Node built-ins at runtime; this project has no local @types/node.
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   CONFIG_DIR,
   DEFAULT_CONFIG_FILE,
@@ -153,6 +153,21 @@ export const getLocalConfigPath = (cwd: string, theme?: string): string =>
     ? join(cwd, ".pi", CONFIG_DIR, THEMES_DIR, `${sanitizeThemeName(theme)}.ts`)
     : join(cwd, ".pi", CONFIG_DIR, DEFAULT_CONFIG_FILE);
 
+export const getAncestorDirs = (cwd: string): string[] => {
+  const dirs: string[] = [];
+  let current = resolve(cwd);
+  while (true) {
+    dirs.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return dirs;
+};
+
+export const getLocalConfigPaths = (cwd: string, theme?: string): string[] =>
+  getAncestorDirs(cwd).map((dir) => getLocalConfigPath(dir, theme));
+
 export const getGlobalConfigPath = (theme?: string): string =>
   theme
     ? join(getPiHome(), CONFIG_DIR, THEMES_DIR, `${sanitizeThemeName(theme)}.ts`)
@@ -175,13 +190,15 @@ const getThemeNamesFromDir = (dir: string): string[] => {
 export const getThemeNames = (cwd: string): string[] =>
   Array.from(
     new Set([
+      ...getAncestorDirs(cwd).flatMap((dir) =>
+        getThemeNamesFromDir(join(dir, ".pi", CONFIG_DIR, THEMES_DIR)),
+      ),
       ...getThemeNamesFromDir(join(getPiHome(), CONFIG_DIR, THEMES_DIR)),
-      ...getThemeNamesFromDir(join(cwd, ".pi", CONFIG_DIR, THEMES_DIR)),
     ]),
   ).sort();
 
 export const getThemePaths = (cwd: string, theme?: string): string[] => [
-  getLocalConfigPath(cwd, theme),
+  ...getLocalConfigPaths(cwd, theme),
   getGlobalConfigPath(theme),
 ];
 

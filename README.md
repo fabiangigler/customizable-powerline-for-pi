@@ -61,11 +61,13 @@ Switches to a named theme.
 
 `/powerline:publish <name>` writes a complete editable global theme file. Start there and change the segments you care about.
 
-Local project themes can override global themes by using the same name under:
+Local project themes can override global themes by using the same name under any `.pi` folder from the current directory upward:
 
 ```text
 .pi/customizable-powerline-for-pi/themes/<name>.ts
 ```
+
+Nearest local themes win over parent-directory themes, and local themes win over global themes.
 
 A few useful notes:
 

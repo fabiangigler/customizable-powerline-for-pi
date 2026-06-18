@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { normalizeConfig } from "./config.ts";
+import { loadPowerlineConfig, normalizeConfig } from "./config.ts";
 import { defaultConfigInput, publishDefaultConfig } from "./default-config.ts";
 import { renderPowerline } from "./render.ts";
-import { ansiBg, ansiFg, getConfigPath } from "./utils.ts";
+import { ansiBg, ansiFg, getConfigPath, getThemeNames, getThemePaths } from "./utils.ts";
 
 const repo = process.cwd();
 
@@ -62,6 +62,36 @@ try {
   assert.equal(named, getConfigPath(tmp, "dark"));
   assert.ok(named.startsWith(process.env.PI_HOME), "named themes publish globally");
   check(named);
+
+  const ancestorRoot = join(tmp, "ancestor-root");
+  const nestedCwd = join(ancestorRoot, "packages", "app");
+  const rootThemeDir = join(ancestorRoot, ".pi", "customizable-powerline-for-pi", "themes");
+  const nestedThemeDir = join(nestedCwd, ".pi", "customizable-powerline-for-pi", "themes");
+  mkdirSync(rootThemeDir, { recursive: true });
+  mkdirSync(nestedThemeDir, { recursive: true });
+  writeFileSync(
+    join(rootThemeDir, "shared.ts"),
+    "export default { left: [{ id: 'root', value: () => 'root' }], right: [] };\n",
+  );
+  writeFileSync(
+    join(nestedThemeDir, "shared.ts"),
+    "export default { left: [{ id: 'nested', value: () => 'nested' }], right: [] };\n",
+  );
+  writeFileSync(
+    join(rootThemeDir, "root-only.ts"),
+    "export default { left: [{ id: 'rootOnly', value: () => 'rootOnly' }], right: [] };\n",
+  );
+
+  const sharedPaths = getThemePaths(nestedCwd, "shared");
+  assert.equal(sharedPaths[0], join(nestedThemeDir, "shared.ts"));
+  assert.ok(sharedPaths.includes(join(rootThemeDir, "shared.ts")), "ancestor theme is discoverable");
+
+  assert.deepEqual(getThemeNames(nestedCwd).filter((name) => name.includes("root") || name === "shared"), ["root-only", "shared"]);
+
+  const nestedConfig = await loadPowerlineConfig(nestedCwd, "shared");
+  assert.equal(nestedConfig.left[0]?.id, "nested", "nearest local theme overrides ancestor theme");
+  const ancestorConfig = await loadPowerlineConfig(nestedCwd, "root-only");
+  assert.equal(ancestorConfig.left[0]?.id, "rootOnly", "ancestor theme loads when no nearer override exists");
 } finally {
   if (oldPiHome === undefined) delete process.env.PI_HOME;
   else process.env.PI_HOME = oldPiHome;
