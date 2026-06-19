@@ -59,9 +59,9 @@ Switches to a named theme.
 
 ## How themes work
 
-`default` is the built-in Agnoster-style theme. The extension also ships `agnoster-tokens`, which adds a token-cost bar on the right.
+`default` is the built-in Agnoster-style theme. The extension also ships `agnoster-compact`, which folds the thinking level into the model segment, and `agnoster-tokens`, which adds a token-cost bar on the right.
 
-`/powerline:publish <name>` writes a complete editable global theme file. For bundled themes such as `agnoster-tokens`, it publishes that bundled source; otherwise it starts from `default`.
+`/powerline:publish <name>` writes a complete editable global theme file. For bundled themes such as `agnoster-compact` or `agnoster-tokens`, it publishes that bundled source; otherwise it starts from `default`.
 
 Local project themes can override bundled and global themes by using the same name under any `.pi` folder from the current directory upward:
 

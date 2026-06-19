@@ -23,6 +23,7 @@ for (const file of [
   "default-config.ts",
   "default-theme.ts",
   "core-themes/default.ts",
+  "core-themes/agnoster-compact.ts",
   "index.ts",
   "render.ts",
   "theme-types.ts",
@@ -72,7 +73,75 @@ try {
   const coreConfig = await loadPowerlineConfig(tmp, "agnoster-tokens");
   assert.equal(coreConfig.right.at(-1)?.id, "tokens", "core theme loads by name");
   assert.ok(getThemeNames(tmp).includes("default"), "default core theme is discoverable");
+  assert.ok(getThemeNames(tmp).includes("agnoster-compact"), "compact core theme is discoverable");
   assert.ok(getThemeNames(tmp).includes("agnoster-tokens"), "core themes are discoverable");
+  const compactConfig = await loadPowerlineConfig(tmp, "agnoster-compact");
+  assert.equal(compactConfig.left.some((segment) => segment.id === "thinking"), false, "compact theme folds thinking into model segment");
+  assert.equal(compactConfig.right.some((segment) => segment.id === "cost"), false, "compact theme omits cost segment");
+  assert.deepEqual(compactConfig.right.map((segment) => segment.id), ["fastMode", "context"], "compact right side only shows fast mode and context");
+  assert.equal(
+    compactConfig.left.find((segment) => segment.id === "path")?.value({
+      ctx: {
+        cwd: join(tmp, "nested", "folder"),
+        model: { id: "test-model", reasoning: true },
+        sessionManager: {
+          buildSessionContext: () => ({ thinkingLevel: "med" }),
+          getBranch: () => [],
+          getEntries: () => [],
+        },
+        ui: { notify() {}, setFooter() {}, setWidget() {}, setWorkingVisible() {} },
+        isIdle: () => true,
+        getContextUsage: () => undefined,
+      },
+      data: { getExtensionStatuses: () => new Map(), fg: (_key: string, text: string) => text },
+      config: compactConfig,
+      memo: new Map(),
+    }),
+    "folder",
+    "compact theme path segment shows only the current folder",
+  );
+  assert.equal(
+    compactConfig.right.find((segment) => segment.id === "fastMode")?.value({
+      ctx: {
+        cwd: tmp,
+        model: { id: "test-model", reasoning: true },
+        sessionManager: {
+          buildSessionContext: () => ({ thinkingLevel: "med" }),
+          getBranch: () => [],
+          getEntries: () => [],
+        },
+        ui: { notify() {}, setFooter() {}, setWidget() {}, setWorkingVisible() {} },
+        isIdle: () => true,
+        getContextUsage: () => undefined,
+      },
+      data: { getExtensionStatuses: () => new Map([["fast-mode", "fast mode off"]]), fg: (_key: string, text: string) => text },
+      config: compactConfig,
+      memo: new Map(),
+    }),
+    "\x1b[9mfast\x1b[29m",
+    "compact theme strikes through fast label when off",
+  );
+  assert.match(
+    compactConfig.left.find((segment) => segment.id === "model")?.value({
+      ctx: {
+        cwd: tmp,
+        model: { id: "test-model", reasoning: true },
+        sessionManager: {
+          buildSessionContext: () => ({ thinkingLevel: "med" }),
+          getBranch: () => [],
+          getEntries: () => [],
+        },
+        ui: { notify() {}, setFooter() {}, setWidget() {}, setWorkingVisible() {} },
+        isIdle: () => true,
+        getContextUsage: () => undefined,
+      },
+      data: { getExtensionStatuses: () => new Map(), fg: (_key: string, text: string) => text },
+      config: compactConfig,
+      memo: new Map(),
+    }) ?? "",
+    /test-model med/,
+    "compact theme shows three-letter thinking label in model segment",
+  );
   const defaultConfig = await loadPowerlineConfig(tmp);
   assert.equal(defaultConfig.right.at(-1)?.id, "cost", "default core theme loads without a selected theme");
 

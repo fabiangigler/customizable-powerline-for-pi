@@ -177,7 +177,7 @@ export const getGlobalConfigPath = (theme?: string): string =>
 
 const sourceDir = (): string => dirname(fileURLToPath(import.meta.url));
 
-export const getCoreThemeNames = (): string[] => ["default", "agnoster-tokens"];
+export const getCoreThemeNames = (): string[] => ["default", "agnoster-compact", "agnoster-tokens"];
 
 export const getCoreConfigPath = (theme?: string): string | undefined => {
   const themeName = theme ? sanitizeThemeName(theme) : "default";
