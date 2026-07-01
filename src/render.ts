@@ -162,7 +162,7 @@ export const renderPowerline = (
 ): string[] => {
   const sectionText = new Map<string, string>();
   const segmentRuntime = new Map<string, SegmentValueContext>();
-  const runtime: SegmentValueContext = { ctx, data, config, memo: new Map() };
+  const runtime: SegmentValueContext = { ctx, data, config, memo: new Map(), width };
 
   for (const section of [...config.left, ...config.right]) {
     segmentRuntime.set(section.id, runtime);

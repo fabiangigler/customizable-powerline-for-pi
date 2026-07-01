@@ -96,6 +96,7 @@ export type SegmentValueContext = {
   data: PowerlineData;
   config: PowerlineConfig;
   memo: Map<string, unknown>;
+  width: number;
 };
 
 export type DynamicValue<T> = T | ((runtime: SegmentValueContext) => T);

@@ -99,6 +99,11 @@ const readGitPowerlineStatus = (runtime) => {
 const getGitPowerlineStatus = (runtime) =>
   memo(runtime, "gitPowerlineStatus", () => readGitPowerlineStatus(runtime));
 
+const formatModelLabel = (runtime) => {
+  const model = runtime.ctx.model?.id ?? "no-model";
+  return runtime.width < 100 ? model.replace(/^gpt-/, "") : model;
+};
+
 const getThinkingLabel = (ctx) => {
   if (!ctx.model?.reasoning) return "";
   const level = ctx.sessionManager.buildSessionContext().thinkingLevel ?? "med";
@@ -171,7 +176,19 @@ const getWindowUsedPercent = (window) => {
   return null;
 };
 
-const getCodexFiveHourUsedPercent = (payload) => {
+const getCodexWindowResetAt = (window) => {
+  const resetAt = window?.reset_at ?? window?.resetAt;
+  if (typeof resetAt === "number" && Number.isFinite(resetAt)) return resetAt * 1000;
+
+  const resetAfterSeconds = window?.reset_after_seconds ?? window?.resetAfterSeconds;
+  if (typeof resetAfterSeconds === "number" && Number.isFinite(resetAfterSeconds)) {
+    return Date.now() + resetAfterSeconds * 1000;
+  }
+
+  return null;
+};
+
+const getCodexFiveHourUsage = (payload) => {
   const windows = getCandidateWindows(payload);
   const fiveHourWindow =
     windows.find((window) => {
@@ -181,7 +198,10 @@ const getCodexFiveHourUsedPercent = (payload) => {
 
   const percent = getWindowUsedPercent(fiveHourWindow);
   if (percent === null) return null;
-  return Math.max(0, Math.min(100, percent));
+  return {
+    percent: Math.max(0, Math.min(100, percent)),
+    resetAt: getCodexWindowResetAt(fiveHourWindow),
+  };
 };
 
 const refreshCodexUsage = (runtime) => {
@@ -205,10 +225,10 @@ const refreshCodexUsage = (runtime) => {
       if (!response.ok) throw new Error(`Codex usage request failed: ${response.status}`);
 
       const payload = await response.json();
-      const percent = getCodexFiveHourUsedPercent(payload);
-      if (percent === null) throw new Error("Codex 5h usage window unavailable");
+      const usage = getCodexFiveHourUsage(payload);
+      if (usage === null) throw new Error("Codex 5h usage window unavailable");
 
-      codexUsageCache.value = percent;
+      codexUsageCache.value = usage;
       codexUsageCache.error = null;
       codexUsageCache.at = Date.now();
     } catch (error) {
@@ -221,7 +241,7 @@ const refreshCodexUsage = (runtime) => {
   })();
 };
 
-const readCodexUsagePercentage = (runtime) => {
+const readCodexUsage = (runtime) => {
   const ttl = codexUsageCache.error ? codexUsageErrorTtlMs : codexUsageTtlMs;
   if (!codexUsageCache.at || Date.now() - codexUsageCache.at >= ttl) {
     refreshCodexUsage(runtime);
@@ -229,8 +249,15 @@ const readCodexUsagePercentage = (runtime) => {
   return codexUsageCache.value;
 };
 
-const getCodexUsagePercentage = (runtime) =>
-  memo(runtime, "codexUsagePercentage", () => readCodexUsagePercentage(runtime));
+const getCodexUsage = (runtime) =>
+  memo(runtime, "codexUsage", () => readCodexUsage(runtime));
+
+const formatResetTime = (resetAt) => {
+  if (!resetAt) return "";
+  const remainingMinutes = Math.max(0, Math.ceil((resetAt - Date.now()) / 60_000));
+  if (remainingMinutes >= 60) return `${(remainingMinutes / 60).toFixed(1)}h`;
+  return `${remainingMinutes}m`;
+};
 
 const usageColor = (percent) => {
   if (percent > 90) return "#cc0000";
@@ -264,9 +291,9 @@ export default {
       id: "model",
       color: "#073642",
       separatorAfter: "",
-      value: ({ ctx }) => {
-        const model = ctx.model?.id ?? "no-model";
-        const thinking = getThinkingLabel(ctx);
+      value: (runtime) => {
+        const model = formatModelLabel(runtime);
+        const thinking = getThinkingLabel(runtime.ctx);
         return thinking ? `${model} ${thinking}` : model;
       },
     },
@@ -309,25 +336,27 @@ export default {
       id: "context",
       color: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexPercent = getCodexUsagePercentage(runtime);
-        return combinedUsageColor(contextPercent, codexPercent);
+        const codexUsage = getCodexUsage(runtime);
+        return combinedUsageColor(contextPercent, codexUsage?.percent);
       },
       value: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexPercent = getCodexUsagePercentage(runtime);
-        return codexPercent === null
-          ? `${contextPercent}% `
-          : `${contextPercent}%  ${codexPercent}% `;
+        const codexUsage = getCodexUsage(runtime);
+        if (codexUsage === null) return `${contextPercent}% `;
+        const reset = codexUsage.percent > 75 ? formatResetTime(codexUsage.resetAt) : "";
+        return reset
+          ? `${contextPercent}%  ${codexUsage.percent}%  ${reset}`
+          : `${contextPercent}%  ${codexUsage.percent}% `;
       },
       separatorAfter: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexPercent = getCodexUsagePercentage(runtime);
-        return Math.max(contextPercent, codexPercent ?? 0) > 75 ? "" : "";
+        const codexUsage = getCodexUsage(runtime);
+        return Math.max(contextPercent, codexUsage?.percent ?? 0) > 75 ? "" : "";
       },
       separatorAfterFg: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexPercent = getCodexUsagePercentage(runtime);
-        return combinedUsageColor(contextPercent, codexPercent);
+        const codexUsage = getCodexUsage(runtime);
+        return combinedUsageColor(contextPercent, codexUsage?.percent);
       },
     },
   ],
