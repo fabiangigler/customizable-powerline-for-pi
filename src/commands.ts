@@ -14,18 +14,18 @@ export type PowerlineRuntimeControls = {
   persistState(): void;
   installPowerline(ctx: ExtensionContext): Promise<void>;
   hidePowerline(ctx: ExtensionContext): void;
-  setCurrentContext(ctx: ExtensionContext): void;
-  getCurrentContext(): ExtensionContext | undefined;
+  setCurrentCwd(cwd: string): void;
+  getCurrentCwd(): string | undefined;
 };
 
-const getAvailableThemes = (ctx?: ExtensionContext): string[] =>
-  Array.from(new Set(["default", ...getThemeNames(ctx?.cwd ?? process.env.PWD ?? "")]));
+const getAvailableThemes = (cwd?: string): string[] =>
+  Array.from(new Set(["default", ...getThemeNames(cwd ?? process.env.PWD ?? "")]));
 
 const getThemeCompletions = (
   prefix: string,
-  ctx?: ExtensionContext,
+  cwd?: string,
 ): CommandCompletion[] =>
-  getAvailableThemes(ctx)
+  getAvailableThemes(cwd)
     .filter((theme) => theme.startsWith(prefix))
     .map((theme) => ({ value: theme, label: theme }));
 
@@ -44,7 +44,7 @@ const executePowerlineCommand = async (
   ctx: ExtensionContext,
   controls: PowerlineRuntimeControls,
 ) => {
-  controls.setCurrentContext(ctx);
+  controls.setCurrentCwd(ctx.cwd);
   const themeName = sanitizeThemeName(rawName);
 
   if (command === "publish") {
@@ -136,7 +136,7 @@ export const registerPowerlineCommand = (
       description: alias.description,
       getArgumentCompletions:
         alias.command === "theme"
-          ? (prefix) => getThemeCompletions(prefix, controls.getCurrentContext())
+          ? (prefix) => getThemeCompletions(prefix, controls.getCurrentCwd())
           : undefined,
       handler: async (args, ctx) => {
         await executePowerlineCommand(alias.command, args.trim(), ctx, controls);

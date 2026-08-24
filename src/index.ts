@@ -20,9 +20,10 @@ declare const clearInterval: (interval: unknown) => void;
 const customizablePowerlineForPi = (pi: ExtensionAPI) => {
   let enabled = true;
   let activeTheme: string | undefined;
-  let currentCtx: ExtensionContext | undefined;
-  let config: PowerlineConfig | undefined;
+  let currentCwd: string | undefined;
   let lastPersistedState = "";
+  let installGeneration = 0;
+  let sessionActive = false;
 
   const serializeState = () => JSON.stringify({ enabled, theme: activeTheme });
   const globalStatePath = () =>
@@ -49,9 +50,8 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
     lastPersistedState = serializeState();
   };
 
-  const refreshConfig = async (ctx: ExtensionContext) => {
-    config = await loadPowerlineConfig(ctx.cwd, activeTheme);
-  };
+  const refreshConfig = async (cwd: string) =>
+    loadPowerlineConfig(cwd, activeTheme);
 
   const hidePowerline = (ctx: ExtensionContext) => {
     ctx.ui.setWidget(WIDGET_KEY, undefined);
@@ -76,23 +76,29 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
   };
 
   const installPowerline = async (ctx: ExtensionContext) => {
-    currentCtx = ctx;
-    await refreshConfig(ctx);
-    if (!enabled || !config) {
+    const generation = ++installGeneration;
+    const cwd = ctx.cwd;
+    currentCwd = cwd;
+    const resolvedConfig = await refreshConfig(cwd);
+    if (!sessionActive || generation !== installGeneration) return;
+
+    if (!enabled) {
       hidePowerline(ctx);
       return;
     }
 
-    applyThemeVisibility(ctx, config);
+    const isCurrent = () => sessionActive && generation === installGeneration;
+    applyThemeVisibility(ctx, resolvedConfig);
 
-    if (config.placement === "footer") {
+    if (resolvedConfig.placement === "footer") {
       ctx.ui.setWidget(WIDGET_KEY, undefined);
       ctx.ui.setFooter((tui, theme, footerData) => {
-        const unsubscribe = footerData.onBranchChange(() =>
-          tui.requestRender(),
-        );
+        const requestRender = () => {
+          if (isCurrent()) tui.requestRender();
+        };
+        const unsubscribe = footerData.onBranchChange(requestRender);
         const interval = setInterval(() => {
-          if (!ctx.isIdle()) tui.requestRender();
+          if (isCurrent() && !ctx.isIdle()) requestRender();
         }, 250);
 
         return {
@@ -102,42 +108,41 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
           },
           invalidate() {},
           render(width: number): string[] {
-            return config
-              ? renderPowerline(width, ctx, config, {
+            return isCurrent()
+              ? renderPowerline(width, ctx, resolvedConfig, {
                   ...footerData,
                   fg: theme?.fg ? (key, text) => theme.fg?.(key, text) ?? text : undefined,
-                  requestRender: () => tui.requestRender(),
+                  requestRender,
                 })
-              : [];
+              : [""];
           },
         };
       });
       return;
     }
 
-    const setPowerlineWidget = () => {
-      ctx.ui.setWidget(
-        WIDGET_KEY,
-        (tui, theme) => {
-          const interval = setInterval(() => {
-            if (!ctx.isIdle()) tui.requestRender();
-          }, 250);
+    ctx.ui.setWidget(
+      WIDGET_KEY,
+      (tui, theme) => {
+        const requestRender = () => {
+          if (isCurrent()) tui.requestRender();
+        };
+        const interval = setInterval(() => {
+          if (isCurrent() && !ctx.isIdle()) requestRender();
+        }, 250);
 
-          return {
-            dispose: () => clearInterval(interval),
-            invalidate() {},
-            render(width: number): string[] {
-              return config
-                ? renderPowerline(width, ctx, config, getWidgetData(theme, () => tui.requestRender()))
-                : [];
-            },
-          };
-        },
-        { placement: config?.placement ?? "aboveEditor" },
-      );
-    };
-
-    setPowerlineWidget();
+        return {
+          dispose: () => clearInterval(interval),
+          invalidate() {},
+          render(width: number): string[] {
+            return isCurrent()
+              ? renderPowerline(width, ctx, resolvedConfig, getWidgetData(theme, requestRender))
+              : [""];
+          },
+        };
+      },
+      { placement: resolvedConfig.placement },
+    );
   };
 
   registerPowerlineCommand(pi, {
@@ -152,21 +157,25 @@ const customizablePowerlineForPi = (pi: ExtensionAPI) => {
     persistState,
     installPowerline,
     hidePowerline,
-    setCurrentContext: (ctx) => {
-      currentCtx = ctx;
+    setCurrentCwd: (cwd) => {
+      currentCwd = cwd;
     },
-    getCurrentContext: () => currentCtx,
+    getCurrentCwd: () => currentCwd,
   });
 
   pi.on("session_start", (_event, ctx) => {
+    sessionActive = true;
     restoreState();
-    void installPowerline(ctx);
+    void installPowerline(ctx).catch((error) => {
+      console.error("Failed to install customizable-powerline-for-pi:", error);
+    });
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    sessionActive = false;
+    installGeneration += 1;
+    currentCwd = undefined;
     hidePowerline(ctx);
-    currentCtx = undefined;
-    config = undefined;
   });
 };
 

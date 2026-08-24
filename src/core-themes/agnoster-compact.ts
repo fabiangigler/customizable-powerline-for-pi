@@ -53,10 +53,11 @@ const parseGitStatus = (stdout) => {
 };
 
 const refreshGitPowerlineStatus = (ctx, data) => {
-  const cached = gitStatusCache.get(ctx.cwd);
+  const cwd = ctx.cwd;
+  const cached = gitStatusCache.get(cwd);
   if (cached?.refreshing) return;
 
-  gitStatusCache.set(ctx.cwd, {
+  gitStatusCache.set(cwd, {
     at: cached?.at ?? 0,
     value: cached?.value ?? null,
     refreshing: true,
@@ -66,14 +67,14 @@ const refreshGitPowerlineStatus = (ctx, data) => {
     "git",
     ["--no-optional-locks", "status", "--porcelain=v1", "--branch"],
     {
-      cwd: ctx.cwd,
+      cwd,
       encoding: "utf8",
       env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
       timeout: 250,
     },
     (error, stdout) => {
       const value = error ? (cached?.value ?? null) : parseGitStatus(stdout);
-      gitStatusCache.set(ctx.cwd, {
+      gitStatusCache.set(cwd, {
         at: Date.now(),
         value,
         refreshing: false,

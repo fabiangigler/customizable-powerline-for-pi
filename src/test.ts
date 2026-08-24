@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { loadPowerlineConfig, normalizeConfig } from "./config.ts";
 import { defaultConfigInput, publishDefaultConfig } from "./default-config.ts";
+import customizablePowerlineForPi from "./index.ts";
 import { renderPowerline } from "./render.ts";
 import { ansiBg, ansiFg, getConfigPath, getThemeNames, getThemePaths } from "./utils.ts";
 
@@ -178,6 +179,84 @@ try {
   if (oldPiHome === undefined) delete process.env.PI_HOME;
   else process.env.PI_HOME = oldPiHome;
   rmSync(tmp, { recursive: true, force: true });
+}
+
+const lifecycleTmp = mkdtempSync(join(tmpdir(), "powerline-lifecycle-test-"));
+const lifecyclePiHome = process.env.PI_HOME;
+process.env.PI_HOME = join(lifecycleTmp, "pi-home");
+const lifecycleHandlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
+let widgetFactory: any;
+let widget: any;
+let stale = false;
+let uncaught: Error | undefined;
+const uncaughtHandler = (error: Error) => {
+  uncaught = error;
+};
+const lifecycleUi = {
+  notify() {},
+  setWorkingVisible() {},
+  setFooter() {},
+  setWidget(_key: string, factory: any) {
+    if (!factory) widget?.dispose?.();
+    widgetFactory = factory;
+  },
+};
+const lifecycleContext = new Proxy(
+  {
+    cwd: lifecycleTmp,
+    model: { id: "test-model", reasoning: true },
+    sessionManager: {
+      buildSessionContext: () => ({ thinkingLevel: "high" }),
+      getBranch: () => [],
+      getEntries: () => [],
+    },
+    ui: lifecycleUi,
+    isIdle: () => true,
+    getContextUsage: () => ({ tokens: 1, contextWindow: 10 }),
+  },
+  {
+    get(target, property, receiver) {
+      if (stale) throw new Error(`stale lifecycle context access: ${String(property)}`);
+      return Reflect.get(target, property, receiver);
+    },
+  },
+);
+process.on("uncaughtException", uncaughtHandler);
+try {
+  customizablePowerlineForPi({
+    on(event: string, handler: (event: unknown, ctx: unknown) => unknown) {
+      const handlers = lifecycleHandlers.get(event) ?? [];
+      handlers.push(handler);
+      lifecycleHandlers.set(event, handlers);
+    },
+    registerCommand() {},
+  } as never);
+
+  for (const handler of lifecycleHandlers.get("session_start") ?? []) {
+    handler({ reason: "startup" }, lifecycleContext);
+  }
+  for (let attempt = 0; attempt < 100 && !widgetFactory; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(widgetFactory, "session start installs the powerline widget");
+
+  widget = widgetFactory(
+    { requestRender() {} },
+    { fg: (_key: string, text: string) => text },
+  );
+  widget.render(120);
+  for (const handler of lifecycleHandlers.get("session_shutdown") ?? []) {
+    handler({ reason: "resume" }, lifecycleContext);
+  }
+  stale = true;
+  assert.deepEqual(widget.render(120), [""], "disposed widgets do not read a stale context");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(uncaught, undefined, "async theme callbacks do not read a stale context after resume");
+} finally {
+  process.removeListener("uncaughtException", uncaughtHandler);
+  if (lifecyclePiHome === undefined) delete process.env.PI_HOME;
+  else process.env.PI_HOME = lifecyclePiHome;
+  rmSync(lifecycleTmp, { recursive: true, force: true });
 }
 
 assert.equal(

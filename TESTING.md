@@ -24,6 +24,7 @@ These tests should stay cheap enough to run during local extension hacking witho
 - All extension `.ts` files pass `node --check`.
 - A freshly published theme passes `node --check`.
 - Rendering 100+ frames should not reload theme modules or run expensive work on every frame.
+- Async theme callbacks and disposed widgets must not access a stale context after `/resume`, `/new`, `/fork`, or `/reload`.
 
 ## Manual open-source checklist
 

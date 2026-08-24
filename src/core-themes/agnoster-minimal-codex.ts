@@ -54,10 +54,11 @@ const parseGitStatus = (stdout) => {
 };
 
 const refreshGitPowerlineStatus = (ctx, data) => {
-  const cached = gitStatusCache.get(ctx.cwd);
+  const cwd = ctx.cwd;
+  const cached = gitStatusCache.get(cwd);
   if (cached?.refreshing) return;
 
-  gitStatusCache.set(ctx.cwd, {
+  gitStatusCache.set(cwd, {
     at: cached?.at ?? 0,
     value: cached?.value ?? null,
     refreshing: true,
@@ -67,14 +68,14 @@ const refreshGitPowerlineStatus = (ctx, data) => {
     "git",
     ["--no-optional-locks", "status", "--porcelain=v1", "--branch"],
     {
-      cwd: ctx.cwd,
+      cwd,
       encoding: "utf8",
       env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
       timeout: 250,
     },
     (error, stdout) => {
       const value = error ? (cached?.value ?? null) : parseGitStatus(stdout);
-      gitStatusCache.set(ctx.cwd, {
+      gitStatusCache.set(cwd, {
         at: Date.now(),
         value,
         refreshing: false,
@@ -208,9 +209,21 @@ const refreshCodexUsage = (runtime) => {
   if (codexUsageCache.refreshing) return;
   codexUsageCache.refreshing = true;
 
+  const requestRender = runtime.data.requestRender;
+  let tokenPromise;
+  try {
+    tokenPromise = runtime.ctx.modelRegistry.getApiKeyForProvider("openai-codex");
+  } catch (error) {
+    codexUsageCache.error = error;
+    codexUsageCache.at = Date.now();
+    codexUsageCache.refreshing = false;
+    requestRender?.();
+    return;
+  }
+
   (async () => {
     try {
-      const token = await runtime.ctx.modelRegistry.getApiKeyForProvider("openai-codex");
+      const token = await tokenPromise;
       const accountId = token ? getChatGptAccountId(token) : null;
       if (!token || !accountId) throw new Error("OpenAI Codex OAuth is not available");
 
@@ -236,7 +249,7 @@ const refreshCodexUsage = (runtime) => {
       codexUsageCache.at = Date.now();
     } finally {
       codexUsageCache.refreshing = false;
-      runtime.data.requestRender?.();
+      requestRender?.();
     }
   })();
 };
