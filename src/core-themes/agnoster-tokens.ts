@@ -227,9 +227,11 @@ export default {
     {
       id: "fastMode",
       color: ({ data }) =>
-        data.getExtensionStatuses().get("fast-mode")?.includes("on")
-          ? "#d7af00"
-          : "#999999",
+        data.getExtensionStatuses().get("fast-mode") === "ultrafast mode on"
+          ? "#cc0000"
+          : data.getExtensionStatuses().get("fast-mode")?.includes("on")
+            ? "#d7af00"
+            : "#999999",
       value: ({ data }) =>
         data.getExtensionStatuses().get("fast-mode") ? "fast" : null,
       separatorAfter: ({ data }) =>

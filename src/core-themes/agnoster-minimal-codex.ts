@@ -1,7 +1,8 @@
 // Customizable Powerline for Pi theme/config.
-// Based on the bundled agnoster-compact theme, with Codex 5h usage.
+// Based on agnoster-compact, with selected-provider subscription usage.
 // Run /powerline:theme agnoster-minimal-codex or /reload after editing.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const memo = (runtime, key, create) => {
   if (!runtime.memo.has(key)) runtime.memo.set(key, create());
@@ -117,14 +118,10 @@ const getThinkingLabel = (ctx) => {
   return normalized.slice(0, 3);
 };
 
-const codexUsageCache = {
-  at: 0,
-  value: null,
-  error: null,
-  refreshing: false,
-};
-const codexUsageTtlMs = 10 * 60_000;
-const codexUsageErrorTtlMs = 30 * 60_000;
+const usageCache = new Map();
+const usageViews = new WeakMap();
+const usageTtlMs = 10 * 60_000;
+const usageErrorTtlMs = 5 * 60_000;
 const chatGptAuthClaim = "https://api.openai.com/auth";
 
 const decodeJwtPayload = (token) => {
@@ -177,93 +174,159 @@ const getWindowUsedPercent = (window) => {
   return null;
 };
 
-const getCodexWindowResetAt = (window) => {
+const getCodexWindowResetAt = (window, receivedAt) => {
   const resetAt = window?.reset_at ?? window?.resetAt;
   if (typeof resetAt === "number" && Number.isFinite(resetAt)) return resetAt * 1000;
 
   const resetAfterSeconds = window?.reset_after_seconds ?? window?.resetAfterSeconds;
   if (typeof resetAfterSeconds === "number" && Number.isFinite(resetAfterSeconds)) {
-    return Date.now() + resetAfterSeconds * 1000;
+    return receivedAt + resetAfterSeconds * 1000;
   }
 
   return null;
 };
 
-const getCodexFiveHourUsage = (payload) => {
-  const windows = getCandidateWindows(payload);
-  const fiveHourWindow =
-    windows.find((window) => {
-      const seconds = window?.limit_window_seconds ?? window?.limitWindowSeconds ?? window?.window_seconds;
-      return typeof seconds === "number" && seconds > 0 && seconds <= 24 * 60 * 60;
-    }) ?? windows[0];
+const windowLabel = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "quota";
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  return `${Math.ceil(seconds / 60)}m`;
+};
 
-  const percent = getWindowUsedPercent(fiveHourWindow);
-  if (percent === null) return null;
+// Percentages are USED, not remaining. Model-specific pools only match explicit names.
+export const parseProviderUsage = (provider, payload, modelId, receivedAt = Date.now()) => {
+  const windows = [];
+  if (provider === "openai-codex") {
+    const normalize = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const additional = Array.isArray(payload?.additional_rate_limits) ? payload.additional_rate_limits : [];
+    const specific = additional.find((limit) =>
+      [limit?.limit_name, limit?.metered_feature].some((name) => name && normalize(name) === normalize(modelId)));
+    for (const window of getCandidateWindows(specific ?? payload)) {
+      const percent = getWindowUsedPercent(window);
+      if (percent === null) continue;
+      const seconds = window.limit_window_seconds ?? window.limitWindowSeconds ?? window.window_seconds;
+      windows.push({ percent, label: windowLabel(seconds), resetAt: getCodexWindowResetAt(window, receivedAt) });
+    }
+  } else if (provider === "anthropic") {
+    const modelWords = String(modelId).toLowerCase().split(/[-_.]/);
+    for (const key of Object.keys(payload ?? {})) {
+      const window = payload[key];
+      let label;
+      if (key === "five_hour") label = "5h";
+      else if (key === "seven_day") label = "7d";
+      else if (key.startsWith("seven_day_") && modelWords.includes(key.slice(10))) {
+        const family = key.slice(10);
+        label = `${family[0].toUpperCase()}${family.slice(1)}7d`;
+      } else continue;
+      const percent = window?.utilization;
+      if (typeof percent !== "number" || !Number.isFinite(percent)) continue;
+      const resetAt = typeof window.resets_at === "string" ? Date.parse(window.resets_at) : NaN;
+      windows.push({ percent, label, resetAt: Number.isFinite(resetAt) ? resetAt : null });
+    }
+  }
+  return windows
+    .filter((window) => Number.isFinite(window.percent) && (window.resetAt === null || window.resetAt > Date.now()))
+    .map((window) => ({ ...window, percent: Math.max(0, Math.min(100, Math.round(window.percent))) }))
+    .sort((a, b) => b.percent - a.percent)[0] ?? null;
+};
+
+const headerValue = (headers, name) =>
+  Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === name)?.[1];
+
+const getUsageSource = (model, auth) => {
+  if (!auth?.ok) return null;
+  const codex = model.provider === "openai-codex";
+  const origin = codex ? "https://chatgpt.com" : "https://api.anthropic.com";
+  try {
+    if (new URL(auth.baseUrl ?? model.baseUrl ?? origin).origin !== origin) return null;
+  } catch { return null; }
+  const authorization = headerValue(auth.headers, "authorization");
+  const token = typeof authorization === "string" ? /^Bearer\s+(.+)$/i.exec(authorization)?.[1] : auth.apiKey;
+  if (typeof token !== "string" || !token) return null;
+  const accountId = codex ? headerValue(auth.headers, "chatgpt-account-id") ?? getChatGptAccountId(token) : "";
+  if (codex ? typeof accountId !== "string" || !accountId : !token.startsWith("sk-ant-oat")) return null;
+  const headers = {
+    Authorization: `Bearer ${token}`, accept: "application/json",
+    ...(codex ? { "chatgpt-account-id": accountId, originator: "pi" } : { "anthropic-beta": "oauth-2025-04-20" }),
+  };
   return {
-    percent: Math.max(0, Math.min(100, percent)),
-    resetAt: getCodexWindowResetAt(fiveHourWindow),
+    // Never keep raw tokens in cache keys or persist them to disk.
+    key: createHash("sha256").update(JSON.stringify([model.provider, origin, accountId, token])).digest("hex"),
+    url: codex ? `${origin}/backend-api/wham/usage` : `${origin}/api/oauth/usage`,
+    headers,
   };
 };
 
-const refreshCodexUsage = (runtime) => {
-  if (codexUsageCache.refreshing) return;
-  codexUsageCache.refreshing = true;
-
-  const requestRender = runtime.data.requestRender;
-  let tokenPromise;
-  try {
-    tokenPromise = runtime.ctx.modelRegistry.getApiKeyForProvider("openai-codex");
-  } catch (error) {
-    codexUsageCache.error = error;
-    codexUsageCache.at = Date.now();
-    codexUsageCache.refreshing = false;
-    requestRender?.();
-    return;
-  }
-
-  (async () => {
+const cachedUsage = (source, model) => {
+  let entry = usageCache.get(source.key);
+  if (entry && (entry.pending || Date.now() < entry.expires)) return entry;
+  entry = { payload: null, at: 0, expires: 0, pending: null };
+  usageCache.set(source.key, entry);
+  if (usageCache.size > 32) usageCache.delete(usageCache.keys().next().value);
+  entry.pending = Promise.resolve().then(async () => {
     try {
-      const token = await tokenPromise;
-      const accountId = token ? getChatGptAccountId(token) : null;
-      if (!token || !accountId) throw new Error("OpenAI Codex OAuth is not available");
-
-      const response = await fetch("https://chatgpt.com/backend-api/wham/usage", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "chatgpt-account-id": accountId,
-          originator: "pi",
-          accept: "application/json",
-        },
+      const response = await fetch(source.url, {
+        headers: source.headers, signal: AbortSignal.timeout(5000), redirect: "error",
       });
-      if (!response.ok) throw new Error(`Codex usage request failed: ${response.status}`);
-
+      if (!response.ok) {
+        const retryAfter = response.headers?.get("retry-after");
+        const seconds = Number(retryAfter);
+        const retryAt = retryAfter && Number.isFinite(seconds) ? Date.now() + seconds * 1000 : Date.parse(retryAfter ?? "");
+        if (Number.isFinite(retryAt) && retryAt > Date.now()) entry.expires = Math.max(Date.now() + usageErrorTtlMs, retryAt);
+        return;
+      }
       const payload = await response.json();
-      const usage = getCodexFiveHourUsage(payload);
-      if (usage === null) throw new Error("Codex 5h usage window unavailable");
-
-      codexUsageCache.value = usage;
-      codexUsageCache.error = null;
-      codexUsageCache.at = Date.now();
-    } catch (error) {
-      codexUsageCache.error = error;
-      codexUsageCache.at = Date.now();
+      entry.at = Date.now();
+      const usage = parseProviderUsage(model.provider, payload, model.id, entry.at);
+      entry.payload = payload;
+      entry.expires = Math.min(entry.at + (usage ? usageTtlMs : usageErrorTtlMs), usage?.resetAt ?? Infinity);
+    } catch {
+      // Unofficial usage endpoints can fail or lack OAuth scope. Never show old data.
     } finally {
-      codexUsageCache.refreshing = false;
-      requestRender?.();
+      entry.pending = null;
+      if (!entry.expires) entry.expires = Date.now() + usageErrorTtlMs;
     }
-  })();
+  });
+  return entry;
 };
 
-const readCodexUsage = (runtime) => {
-  const ttl = codexUsageCache.error ? codexUsageErrorTtlMs : codexUsageTtlMs;
-  if (!codexUsageCache.at || Date.now() - codexUsageCache.at >= ttl) {
-    refreshCodexUsage(runtime);
+export const readProviderUsage = (runtime) => {
+  const model = runtime.ctx.model;
+  if (!(model?.provider === "openai-codex" && model.api === "openai-codex-responses") &&
+      !(model?.provider === "anthropic" && model.api === "anthropic-messages")) return null;
+  const registry = runtime.ctx.modelRegistry;
+  if (!registry?.getApiKeyAndHeaders) return null;
+  let view = usageViews.get(runtime.ctx);
+  if (!view || view.model !== model) {
+    view = { model, key: null, checking: false, nextCheck: 0 };
+    usageViews.set(runtime.ctx, view);
   }
-  return codexUsageCache.value;
+  if (!view.checking && Date.now() >= view.nextCheck) {
+    view.checking = true;
+    view.nextCheck = Date.now() + 1000;
+    // Capture session-bound methods before awaiting; old contexts become stale on resume.
+    const resolveAuth = registry.getApiKeyAndHeaders.bind(registry);
+    const requestRender = runtime.data.requestRender;
+    (async () => {
+      let pending;
+      try {
+        const source = getUsageSource(model, await resolveAuth(model));
+        view.key = source?.key ?? null;
+        if (source) pending = cachedUsage(source, model).pending;
+      } catch { view.key = null; }
+      finally { view.checking = false; }
+      // Slow quota fetches must not block checking a newly selected account.
+      await pending;
+      requestRender?.();
+    })();
+  }
+  const entry = usageCache.get(view.key);
+  if (!entry?.payload || entry.pending || Date.now() >= entry.expires) return null;
+  return parseProviderUsage(model.provider, entry.payload, model.id, entry.at);
 };
 
-const getCodexUsage = (runtime) =>
-  memo(runtime, "codexUsage", () => readCodexUsage(runtime));
+const getProviderUsage = (runtime) =>
+  memo(runtime, "providerUsage", () => readProviderUsage(runtime));
 
 const formatResetTime = (resetAt) => {
   if (!resetAt) return "";
@@ -277,10 +340,10 @@ const usageColor = (percent) => {
   return percent > 75 ? "#d86408" : "#3a3a3a";
 };
 
-const combinedUsageColor = (contextPercent, codexPercent) => {
+const combinedUsageColor = (contextPercent, usagePercent) => {
   if (contextPercent > 90) return "#cc0000";
   if (contextPercent > 75) return "#d86408";
-  if ((codexPercent ?? 0) > 75) return "#b8860b";
+  if ((usagePercent ?? 0) > 75) return "#b8860b";
   return "#3a3a3a";
 };
 
@@ -333,9 +396,11 @@ export default {
     {
       id: "fastMode",
       color: ({ data }) =>
-        data.getExtensionStatuses().get("fast-mode")?.includes("on")
-          ? "#d7af00"
-          : "#999999",
+        data.getExtensionStatuses().get("fast-mode") === "ultrafast mode on"
+          ? "#cc0000"
+          : data.getExtensionStatuses().get("fast-mode")?.includes("on")
+            ? "#d7af00"
+            : "#999999",
       value: ({ data }) =>
         data.getExtensionStatuses().get("fast-mode")?.includes("on")
           ? ""
@@ -349,27 +414,25 @@ export default {
       id: "context",
       color: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexUsage = getCodexUsage(runtime);
-        return combinedUsageColor(contextPercent, codexUsage?.percent);
+        const usage = getProviderUsage(runtime);
+        return combinedUsageColor(contextPercent, usage?.percent);
       },
       value: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexUsage = getCodexUsage(runtime);
-        if (codexUsage === null) return `${contextPercent}% `;
-        const reset = codexUsage.percent > 75 ? formatResetTime(codexUsage.resetAt) : "";
-        return reset
-          ? `${contextPercent}%  ${codexUsage.percent}%  ${reset}`
-          : `${contextPercent}%  ${codexUsage.percent}% `;
+        const usage = getProviderUsage(runtime);
+        if (usage === null) return `${contextPercent}% `;
+        const reset = usage.percent > 75 ? formatResetTime(usage.resetAt) : "";
+        return `${contextPercent}%  ${usage.percent}% ${usage.label} ${reset ? ` ${reset}` : ""}`;
       },
       separatorAfter: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexUsage = getCodexUsage(runtime);
-        return Math.max(contextPercent, codexUsage?.percent ?? 0) > 75 ? "" : "";
+        const usage = getProviderUsage(runtime);
+        return Math.max(contextPercent, usage?.percent ?? 0) > 75 ? "" : "";
       },
       separatorAfterFg: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
-        const codexUsage = getCodexUsage(runtime);
-        return combinedUsageColor(contextPercent, codexUsage?.percent);
+        const usage = getProviderUsage(runtime);
+        return combinedUsageColor(contextPercent, usage?.percent);
       },
     },
   ],

@@ -64,7 +64,15 @@ export type PowerlineSessionManager = {
 
 export type ExtensionContext = {
   cwd: string;
-  model?: { id?: string; reasoning?: unknown; api?: string };
+  model?: { id?: string; reasoning?: unknown; api?: string; provider?: string; baseUrl?: string };
+  modelRegistry?: {
+    getApiKeyAndHeaders(model: NonNullable<ExtensionContext["model"]>): Promise<{
+      ok: boolean;
+      apiKey?: string;
+      headers?: Record<string, string | null | undefined>;
+      baseUrl?: string;
+    }>;
+  };
   sessionManager: PowerlineSessionManager;
   ui: PowerlineUI;
   isIdle(): boolean;

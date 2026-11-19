@@ -59,7 +59,17 @@ Switches to a named theme.
 
 ## How themes work
 
-`default` is the built-in Agnoster-style theme. The extension also ships `agnoster-compact`, which folds the thinking level into the model segment, `agnoster-tokens`, which adds a token-cost bar on the right, and `agnoster-minimal-codex`, which adds compact context and Codex 5h usage indicators.
+`default` is the built-in Agnoster-style theme. The extension also ships `agnoster-compact`, which folds the thinking level into the model segment, `agnoster-tokens`, which adds a token-cost bar on the right, and `agnoster-minimal-codex`, which adds compact context and selected-provider subscription usage indicators.
+
+All bundled themes show Ultrafast in red, ordinary Fast in yellow, and off in gray.
+
+### Subscription limits
+
+`agnoster-minimal-codex` reads usage for the selected `openai-codex` or `anthropic` provider using Pi's resolved model request authentication. It never borrows Codex credentials for Anthropic or public OpenAI API-key requests. Cache entries are isolated by provider and a credential/account fingerprint; model/provider changes hide the previous view while credentials are resolved. Credentials are rechecked at most once per second during rendering, and usage requests are coalesced and cached for up to 10 minutes (or the displayed reset).
+
+The clock shows the **highest used applicable window**, with its duration (`5h`, `7d`, etc.). Explicit Codex model-specific pools and Claude model-family weekly windows are used when available. Shared account windows can legitimately stay the same between models. Percentages mean **used**, not remaining.
+
+These subscription endpoints are unofficial and may reject credentials without the required OAuth scope. API-key accounts, other providers, custom endpoints, errors and expired data omit the quota rather than showing another account's values. This does not display API RPM/TPM limits. Requests time out after five seconds; errors back off and respect `Retry-After`. Tokens stay in memory and are sent only to the appropriate provider's fixed HTTPS endpoint, never logged or written to a theme cache.
 
 `/powerline:publish <name>` writes a complete editable global theme file. For bundled themes such as `agnoster-compact` or `agnoster-tokens`, it publishes that bundled source; otherwise it starts from `default`.
 
@@ -98,14 +108,14 @@ Toggle state and the selected named theme are stored globally at `~/.pi/agent/cu
 Run smoke tests:
 
 ```bash
-node .pi/extensions/customizable-powerline-for-pi/src/test.ts
+node src/test.ts
+node --test src/provider-usage.test.ts
 ```
 
 Validate syntax only:
 
 ```bash
-find .pi/extensions/customizable-powerline-for-pi/src -name '*.ts' -print0 | xargs -0 -n1 node --check
-node --check .pi/extensions/fast-mode-for-pi/index.ts
+find src -name '*.ts' -print0 | xargs -0 -n1 node --check
 ```
 
 See `TESTING.md` for the lightweight test plan.

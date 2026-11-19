@@ -16,7 +16,7 @@ const check = (file: string) => {
   execFileSync(process.execPath, ["--check", file], { cwd: repo, stdio: "inherit" });
 };
 
-const extensionDir = join(repo, ".pi/extensions/customizable-powerline-for-pi/src");
+const extensionDir = join(repo, "src");
 for (const file of [
   "commands.ts",
   "config.ts",
@@ -31,10 +31,10 @@ for (const file of [
   "types.ts",
   "utils.ts",
   "core-themes/agnoster-tokens.ts",
+  "core-themes/agnoster-minimal-codex.ts",
 ]) {
   check(join(extensionDir, file));
 }
-check(join(repo, ".pi/extensions/fast-mode-for-pi/index.ts"));
 
 const normalized = normalizeConfig({
   left: [{ id: "plain", value: () => "ok" }],
@@ -71,6 +71,10 @@ try {
   assert.equal(coreNamed, getConfigPath(tmp, "agnoster-tokens"));
   assert.match(readFileSync(coreNamed, "utf8"), /id: "tokens"/, "core theme source is published by name");
   check(coreNamed);
+  const minimalNamed = publishDefaultConfig(tmp, "agnoster-minimal-codex");
+  check(minimalNamed);
+  const minimalConfig = await loadPowerlineConfig(tmp, "agnoster-minimal-codex");
+  assert.equal((minimalConfig.right[0] as { id: string })?.id, "fastMode", "provider-usage theme remains self-contained when published globally");
   const coreConfig = await loadPowerlineConfig(tmp, "agnoster-tokens");
   assert.equal(coreConfig.right.at(-1)?.id, "tokens", "core theme loads by name");
   assert.ok(getThemeNames(tmp).includes("default"), "default core theme is discoverable");

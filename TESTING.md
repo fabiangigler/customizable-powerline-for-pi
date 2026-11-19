@@ -10,6 +10,17 @@ These tests should stay cheap enough to run during local extension hacking witho
 - Broken segment callbacks are isolated so one bad segment does not break the full bar.
 - Invalid colors fall back to terminal defaults instead of emitting `NaN` ANSI sequences.
 
+## Provider usage and speed indicators
+
+Run `node --test src/provider-usage.test.ts`. Tests use synthetic tokens and mocked usage endpoints only; they do not read credentials or make provider requests.
+
+- Ultrafast is red in all bundled themes; Fast/off retain their colors.
+- Provider/model/account switches cannot reuse another scope's quota; late responses cannot overwrite the active view.
+- Resolved model auth and account headers select the usage source; API keys, custom endpoints and unsupported providers remain quiet.
+- Applicable shared/model-family windows, used percentages, durations and reset timestamps are parsed correctly.
+- Concurrent refreshes coalesce; failed/expired data is hidden; timeout, redirect refusal and retry backoff stay bounded.
+- Published provider-usage themes remain self-contained, and async completion never reads disposed contexts.
+
 ## Command/publish checks
 
 - `/powerline` toggles state.
@@ -20,7 +31,7 @@ These tests should stay cheap enough to run during local extension hacking witho
 
 ## Integration smoke checks
 
-- Package manifest points Pi at `.pi/extensions/customizable-powerline-for-pi/src/index.ts`; no top-level shim should exist.
+- Package manifest points Pi at `src/index.ts`; no top-level shim should exist.
 - All extension `.ts` files pass `node --check`.
 - A freshly published theme passes `node --check`.
 - Rendering 100+ frames should not reload theme modules or run expensive work on every frame.
