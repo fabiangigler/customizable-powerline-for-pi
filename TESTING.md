@@ -17,7 +17,7 @@ Run `node --test src/provider-usage.test.ts`. Tests use synthetic tokens and moc
 - Ultrafast is red in all bundled themes; Fast/off retain their colors.
 - Provider/model/account switches cannot reuse another scope's quota; late responses cannot overwrite the active view.
 - Resolved model auth and account headers select the usage source; API keys, custom endpoints and unsupported providers remain quiet.
-- Applicable shared/model-family windows, used percentages, durations and reset timestamps are parsed correctly.
+- Applicable shared/model-family windows and reset timestamps are parsed correctly. Time until reset appears only above 75% used when the reset timestamp is known.
 - Concurrent refreshes coalesce; failed/expired data is hidden; timeout, redirect refusal and retry backoff stay bounded.
 - Published provider-usage themes remain self-contained, and async completion never reads disposed contexts.
 

@@ -51,11 +51,10 @@ test("Ultrafast is red in every bundled theme; ordinary Fast and off keep their 
   }
 });
 
-test("Codex reports actual window duration and the highest used applicable window", async () => fixture(h => {
-  const payload = { rate_limit: { primary_window: { used_percent: 20, limit_window_seconds: 18000 },
-    secondary_window: { used_percent: 81, limit_window_seconds: 604800 } } };
-  assert.deepEqual(h.parseProviderUsage("openai-codex", payload, "gpt-6.2-sol"), { percent: 81, label: "7d", resetAt: null });
-  assert.equal(h.parseProviderUsage("openai-codex", { primary_window: { used_percent: 10, limit_window_seconds: 900 } }, "model").label, "15m");
+test("Codex reports the highest used applicable window and its own reset time", async () => fixture(h => {
+  const payload = { rate_limit: { primary_window: { used_percent: 20, limit_window_seconds: 18000, reset_after_seconds: 900 },
+    secondary_window: { used_percent: 81, limit_window_seconds: 604800, reset_after_seconds: 10800 } } };
+  assert.deepEqual(h.parseProviderUsage("openai-codex", payload, "gpt-6.2-sol"), { percent: 81, resetAt: h.now() + 10800000 });
 }));
 
 test("Codex model-specific buckets match exact model names, not another model's pool", async () => fixture(h => {
@@ -67,8 +66,8 @@ test("Codex model-specific buckets match exact model names, not another model's 
 test("Claude uses shared windows plus only the selected model family's weekly limit", async () => fixture(h => {
   const payload = { five_hour: { utilization: 20 }, seven_day: { utilization: 10 },
     seven_day_opus: { utilization: 84 }, seven_day_sonnet: { utilization: 97 }, seven_day_oauth_apps: { utilization: 100 } };
-  assert.deepEqual(h.parseProviderUsage("anthropic", payload, "claude-opus-4-7"), { percent: 84, label: "7d", resetAt: null });
-  assert.deepEqual(h.parseProviderUsage("anthropic", payload, "claude-sonnet-4-7"), { percent: 97, label: "7d", resetAt: null });
+  assert.equal(h.parseProviderUsage("anthropic", payload, "claude-opus-4-7").percent, 84);
+  assert.equal(h.parseProviderUsage("anthropic", payload, "claude-sonnet-4-7").percent, 97);
   assert.equal(h.parseProviderUsage("anthropic", payload, "claude-haiku-4-5").percent, 20);
 }));
 
@@ -87,6 +86,46 @@ test("relative reset time is anchored to receipt, not recomputed on every render
   const before = h.parseProviderUsage("openai-codex", payload, "model", receivedAt);
   h.advance(60000);
   assert.equal(h.parseProviderUsage("openai-codex", payload, "model", receivedAt).resetAt, before.resetAt);
+}));
+
+const contextSegment = (h: any) => {
+  const segment = h.default.right.find((s: { id: string }) => s.id === "context");
+  return segment.value({ ...h.runtime, memo: new Map() });
+};
+
+test("at or below 75% used, the footer shows neither the window length nor the reset time", async () => fixture(async h => {
+  h.setResponse(async () => new Response(JSON.stringify({ primary_window: {
+    used_percent: 75, limit_window_seconds: 18000, reset_after_seconds: 2820,
+  } })));
+  contextSegment(h); await h.tick();
+  assert.match(contextSegment(h), /75% $/);
+}));
+
+test("above 75% used, the footer shows only time until reset and updates on render", async () => fixture(async h => {
+  h.setResponse(async () => new Response(JSON.stringify({ rate_limit: {
+    primary_window: { used_percent: 76, limit_window_seconds: 18000, reset_after_seconds: 2820 },
+    secondary_window: { used_percent: 53, limit_window_seconds: 604800, reset_after_seconds: 86400 },
+  } })));
+  contextSegment(h); await h.tick();
+  assert.match(contextSegment(h), /76%  47m$/);
+  h.advance(60000);
+  assert.match(contextSegment(h), /76%  46m$/);
+  assert.equal(h.calls.length, 1);
+}));
+
+test("a weekly quota shows days and hours remaining rather than the full span", async () => fixture(async h => {
+  h.selectClaude();
+  h.setResponse(async () => new Response(JSON.stringify({
+    seven_day_opus: { utilization: 82, resets_at: new Date(h.now() + 52 * 3600000).toISOString() },
+  })));
+  contextSegment(h); await h.tick();
+  assert.match(contextSegment(h), /82%  2d 4h$/);
+}));
+
+test("above 75% used with no reset timestamp the footer still shows just percentage and clock", async () => fixture(async h => {
+  h.setResponse(async () => new Response(JSON.stringify(codexPayload(86))));
+  contextSegment(h); await h.tick();
+  assert.match(contextSegment(h), /86% $/);
 }));
 
 test("switching from Codex to Claude hides the old quota and uses the selected provider's auth", async () => fixture(async h => {

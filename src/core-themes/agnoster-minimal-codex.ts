@@ -186,13 +186,6 @@ const getCodexWindowResetAt = (window, receivedAt) => {
   return null;
 };
 
-const windowLabel = (seconds) => {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "quota";
-  if (seconds % 86400 === 0) return `${seconds / 86400}d`;
-  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
-  return `${Math.ceil(seconds / 60)}m`;
-};
-
 // Percentages are USED, not remaining. Model-specific pools only match explicit names.
 export const parseProviderUsage = (provider, payload, modelId, receivedAt = Date.now()) => {
   const windows = [];
@@ -204,22 +197,18 @@ export const parseProviderUsage = (provider, payload, modelId, receivedAt = Date
     for (const window of getCandidateWindows(specific ?? payload)) {
       const percent = getWindowUsedPercent(window);
       if (percent === null) continue;
-      const seconds = window.limit_window_seconds ?? window.limitWindowSeconds ?? window.window_seconds;
-      windows.push({ percent, label: windowLabel(seconds), resetAt: getCodexWindowResetAt(window, receivedAt) });
+      windows.push({ percent, resetAt: getCodexWindowResetAt(window, receivedAt) });
     }
   } else if (provider === "anthropic") {
     const modelWords = String(modelId).toLowerCase().split(/[-_.]/);
     for (const key of Object.keys(payload ?? {})) {
+      if (key !== "five_hour" && key !== "seven_day" &&
+          !(key.startsWith("seven_day_") && modelWords.includes(key.slice(10)))) continue;
       const window = payload[key];
-      let label;
-      if (key === "five_hour") label = "5h";
-      else if (key === "seven_day") label = "7d";
-      else if (key.startsWith("seven_day_") && modelWords.includes(key.slice(10))) label = "7d";
-      else continue;
       const percent = window?.utilization;
       if (typeof percent !== "number" || !Number.isFinite(percent)) continue;
       const resetAt = typeof window.resets_at === "string" ? Date.parse(window.resets_at) : NaN;
-      windows.push({ percent, label, resetAt: Number.isFinite(resetAt) ? resetAt : null });
+      windows.push({ percent, resetAt: Number.isFinite(resetAt) ? resetAt : null });
     }
   }
   return windows
@@ -327,9 +316,12 @@ const getProviderUsage = (runtime) =>
   memo(runtime, "providerUsage", () => readProviderUsage(runtime));
 
 const formatResetTime = (resetAt) => {
-  if (!resetAt) return "";
-  const remainingMinutes = Math.max(0, Math.ceil((resetAt - Date.now()) / 60_000));
-  if (remainingMinutes >= 60) return `${(remainingMinutes / 60).toFixed(1)}h`;
+  const remainingMs = resetAt - Date.now();
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "";
+  const remainingMinutes = Math.ceil(remainingMs / 60_000);
+  const hours = Math.floor(remainingMinutes / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${remainingMinutes % 60}m`;
   return `${remainingMinutes}m`;
 };
 
@@ -420,7 +412,7 @@ export default {
         const usage = getProviderUsage(runtime);
         if (usage === null) return `${contextPercent}% `;
         const reset = usage.percent > 75 ? formatResetTime(usage.resetAt) : "";
-        return `${contextPercent}%  ${usage.percent}% ${usage.label} ${reset ? ` ${reset}` : ""}`;
+        return `${contextPercent}%  ${usage.percent}% ${reset ? ` ${reset}` : ""}`;
       },
       separatorAfter: (runtime) => {
         const contextPercent = getContextPercentage(runtime);
