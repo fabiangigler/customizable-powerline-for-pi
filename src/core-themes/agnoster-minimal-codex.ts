@@ -214,10 +214,8 @@ export const parseProviderUsage = (provider, payload, modelId, receivedAt = Date
       let label;
       if (key === "five_hour") label = "5h";
       else if (key === "seven_day") label = "7d";
-      else if (key.startsWith("seven_day_") && modelWords.includes(key.slice(10))) {
-        const family = key.slice(10);
-        label = `${family[0].toUpperCase()}${family.slice(1)}7d`;
-      } else continue;
+      else if (key.startsWith("seven_day_") && modelWords.includes(key.slice(10))) label = "7d";
+      else continue;
       const percent = window?.utilization;
       if (typeof percent !== "number" || !Number.isFinite(percent)) continue;
       const resetAt = typeof window.resets_at === "string" ? Date.parse(window.resets_at) : NaN;

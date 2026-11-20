@@ -67,8 +67,8 @@ test("Codex model-specific buckets match exact model names, not another model's 
 test("Claude uses shared windows plus only the selected model family's weekly limit", async () => fixture(h => {
   const payload = { five_hour: { utilization: 20 }, seven_day: { utilization: 10 },
     seven_day_opus: { utilization: 84 }, seven_day_sonnet: { utilization: 97 }, seven_day_oauth_apps: { utilization: 100 } };
-  assert.deepEqual(h.parseProviderUsage("anthropic", payload, "claude-opus-4-7"), { percent: 84, label: "Opus7d", resetAt: null });
-  assert.equal(h.parseProviderUsage("anthropic", payload, "claude-sonnet-4-7").label, "Sonnet7d");
+  assert.deepEqual(h.parseProviderUsage("anthropic", payload, "claude-opus-4-7"), { percent: 84, label: "7d", resetAt: null });
+  assert.deepEqual(h.parseProviderUsage("anthropic", payload, "claude-sonnet-4-7"), { percent: 97, label: "7d", resetAt: null });
   assert.equal(h.parseProviderUsage("anthropic", payload, "claude-haiku-4-5").percent, 20);
 }));
 
